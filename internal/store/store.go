@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -71,9 +72,7 @@ func (s *Store) Get(key string) (string, error) {
 	}
 
 	if !item.ExpiresAt.IsZero() && time.Now().After(item.ExpiresAt) {
-		if item, ok := s.data[key]; ok && !item.ExpiresAt.IsZero() && time.Now().After(item.ExpiresAt) {
-			delete(s.data, key)
-		}
+		delete(s.data, key)
 		return "", ErrKeyNotFound
 	}
 
@@ -148,7 +147,7 @@ func (s *Store) LeftAppend(key string, values ...string) (int, error) {
 		return 0, ErrInternalTypeAssertion
 	}
 	if len(values) > 0 {
-		list = append(list, values...)
+		list = append(values, list...)
 		item.Value = list
 	}
 
@@ -177,16 +176,10 @@ func (s *Store) GetRange(key string, start, stop int) ([]string, error) {
 	length := len(list)
 
 	if start < 0 {
-		start = length + start
-		if start < 0 {
-			start = 0
-		}
+		start = max(length+start, 0)
 	}
 	if stop < 0 {
-		stop = length + stop
-		if stop < 0 {
-			stop = 0
-		}
+		stop = max(length+stop, 0)
 	}
 
 	if start > stop {
@@ -307,7 +300,7 @@ func (s *Store) LPop(key string, count int) ([]string, error) {
 	return r, nil
 }
 
-func (s *Store) BLPop(key string, timeout float64) ([]string, error) {
+func (s *Store) BLPop(ctx context.Context, key string, timeout float64) ([]string, error) {
 	s.mu.Lock()
 
 	item, ok := s.data[key]
@@ -351,6 +344,9 @@ func (s *Store) BLPop(key string, timeout float64) ([]string, error) {
 	case <-timer:
 		s.cleanupBlockingClients(key, ch)
 		return nil, ErrTimeout
+	case <-ctx.Done():
+		s.cleanupBlockingClients(key, ch)
+		return nil, ctx.Err()
 	}
 }
 
@@ -369,7 +365,7 @@ func (s *Store) Type(key string) string {
 	return string(TypeNone)
 }
 
-func (s *Store) XAdd(key string, entryId string, keyValues []string) (string, error) {
+func (s *Store) XAdd(key, entryId string, keyValues []string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -401,8 +397,8 @@ func (s *Store) XAdd(key string, entryId string, keyValues []string) (string, er
 		return "", err
 	}
 
-	values := make(map[string]string)
-	for i := 0; i < len(keyValues); i += 2 {
+	values := make(map[string]string, len(keyValues)/2)
+	for i := 0; i+1 < len(keyValues); i += 2 {
 		values[keyValues[i]] = keyValues[i+1]
 	}
 
@@ -457,16 +453,16 @@ func (s *Store) cleanupBlockingClients(listName string, ch chan string) {
 	}
 }
 
-func (s *Store) parseEntryId(entryId string, prev StreamEntry) (int, int, error) {
-	splitId := strings.Split(entryId, "-")
-	if len(splitId) != 2 {
+func (s *Store) parseEntryId(entryId string, prev StreamEntry) (ms, seq int, err error) {
+	msStr, seqStr, ok := strings.Cut(entryId, "-")
+	if !ok {
 		return 0, 0, ErrInvalidEntryId
 	}
-	ms, err := strconv.Atoi(splitId[0])
+	ms, err = strconv.Atoi(msStr)
 	if err != nil {
 		return 0, 0, ErrInvalidEntryId
 	}
-	seq, err := strconv.Atoi(splitId[1])
+	seq, err = strconv.Atoi(seqStr)
 	if err != nil {
 		return 0, 0, ErrInvalidEntryId
 	}
