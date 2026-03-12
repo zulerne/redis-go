@@ -1,8 +1,10 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,18 +47,21 @@ func TestStore_Expiration(t *testing.T) {
 func TestStore_Concurrency(t *testing.T) {
 	s := newStore()
 
-	for i := 0; i < 100; i++ {
+	var wg sync.WaitGroup
+	for range 100 {
+		wg.Add(2)
 		go func() {
+			defer wg.Done()
 			s.Set("key", "value", 10*time.Millisecond)
 		}()
 
 		go func() {
-			time.Sleep(10 * time.Millisecond)
+			defer wg.Done()
 			_, _ = s.Get("key")
 		}()
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	wg.Wait()
 }
 
 func TestStore_Append(t *testing.T) {
@@ -146,6 +151,20 @@ func TestStore_LeftAppend(t *testing.T) {
 	for i, val := range rangeRes {
 		assert.Equal(t, expectedOrder[i], val)
 	}
+}
+
+func TestStore_LeftAppend_ExistingList(t *testing.T) {
+	s := newStore()
+	key := "lpush_existing"
+
+	_, _ = s.Append(key, "x", "y")
+
+	// LPUSH key "a" "b" on existing [x, y]
+	l, _ := s.LeftAppend(key, "a", "b")
+	assert.Equal(t, 4, l)
+
+	rangeRes, _ := s.GetRange(key, 0, -1)
+	assert.Equal(t, []string{"b", "a", "x", "y"}, rangeRes)
 }
 
 func TestStore_ListLen(t *testing.T) {
@@ -241,7 +260,7 @@ func TestStore_BlpopTimeout(t *testing.T) {
 	listName := "test_list"
 
 	start := time.Now()
-	res, err := s.BLPop(listName, 0.1)
+	res, err := s.BLPop(context.Background(), listName, 0.1)
 	elapsed := time.Since(start)
 
 	assert.True(t, errors.Is(err, ErrTimeout))
@@ -258,12 +277,27 @@ func TestStore_BlpopSuccess(t *testing.T) {
 		_, _ = s.Append(listName, "value")
 	}()
 
-	res, err := s.BLPop(listName, 1.0)
+	res, err := s.BLPop(context.Background(), listName, 1.0)
 
 	assert.Nil(t, err)
 	assert.Equal(t, len(res), 2)
 	assert.Equal(t, res[0], listName)
 	assert.Equal(t, res[1], "value")
+}
+
+func TestStore_BlpopContextCancel(t *testing.T) {
+	s := newStore()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	res, err := s.BLPop(ctx, "nonexistent", 10)
+
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, res)
 }
 
 func TestStore_Type(t *testing.T) {

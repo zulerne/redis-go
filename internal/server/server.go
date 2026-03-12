@@ -22,9 +22,9 @@ type Server struct {
 	wg     sync.WaitGroup
 }
 
-func NewServer(store *store.Store, cfg config.Config, logger *slog.Logger) *Server {
+func NewServer(s *store.Store, cfg config.Config, logger *slog.Logger) *Server {
 	return &Server{
-		store:  store,
+		store:  s,
 		config: cfg,
 		logger: logger,
 	}
@@ -37,35 +37,33 @@ func (s *Server) Listen(ctx context.Context) error {
 	}
 	defer l.Close()
 
-	s.logger.Info("server started", "addr", s.config.Addr)
+	s.logger.InfoContext(ctx, "server started", "addr", s.config.Addr)
 
 	go func() {
 		<-ctx.Done()
-		l.Close()
+		_ = l.Close()
 	}()
 
 	for {
 		conn, err := l.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
-				s.logger.Info("waiting for active connections to finish...")
+				s.logger.InfoContext(ctx, "waiting for active connections to finish...")
 				s.wg.Wait()
-				s.logger.Info("server stopped")
+				s.logger.InfoContext(ctx, "server stopped")
 				return nil
 			}
-			s.logger.Error("accepting connection", "error", err)
+			s.logger.ErrorContext(ctx, "accepting connection", "error", err)
 			continue
 		}
 
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			s.handleConnection(conn)
-		}()
+		s.wg.Go(func() {
+			s.handleConnection(ctx, conn)
+		})
 	}
 }
 
-func (s *Server) handleConnection(conn net.Conn) {
+func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 	r := resp.NewResp(conn)
 
@@ -74,24 +72,24 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				s.logger.Debug("client disconnected")
+				s.logger.DebugContext(ctx, "client disconnected")
 				return
 			}
-			s.logger.Error("reading request", "error", err)
+			s.logger.ErrorContext(ctx, "reading request", "error", err)
 			return
 		}
 		if arr.Type != resp.ArrayType {
-			s.logger.Warn("invalid request type", "expected", "array", "got", arr.Type)
+			s.logger.WarnContext(ctx, "invalid request type", "expected", "array", "got", arr.Type)
 			continue
 		}
 		if len(arr.Array) == 0 {
 			continue
 		}
 
-		output := commands.Handle(strings.ToUpper(arr.Array[0].Value), resp.ToStringSlice(arr.Array[1:]), s.store)
+		output := commands.Handle(ctx, strings.ToUpper(arr.Array[0].Value), resp.ToStringSlice(arr.Array[1:]), s.store)
 		_, err = io.WriteString(conn, output)
 		if err != nil {
-			s.logger.Error("writing response", "error", err)
+			s.logger.ErrorContext(ctx, "writing response", "error", err)
 			return
 		}
 	}

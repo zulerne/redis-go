@@ -14,6 +14,12 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -27,7 +33,5 @@ func main() {
 		logger.With("component", "server"),
 	)
 
-	if err := redisServer.Listen(ctx); err != nil {
-		log.Fatal(err)
-	}
+	return redisServer.Listen(ctx)
 }

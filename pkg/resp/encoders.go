@@ -43,7 +43,8 @@ func EncodeInteger(i int) string {
 
 func EncodeArray(a []string) string {
 	var r strings.Builder
-	r.WriteString(fmt.Sprintf("%c%d\r\n", ArrayChar, len(a)))
+	r.Grow(len(a) * 20)
+	fmt.Fprintf(&r, "%c%d\r\n", ArrayChar, len(a))
 
 	for _, s := range a {
 		r.WriteString(EncodeBulk(s))

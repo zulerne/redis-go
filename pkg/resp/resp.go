@@ -84,7 +84,7 @@ func (r *Resp) readArray() (Value, error) {
 	}
 
 	v.Array = make([]Value, 0, l)
-	for i := 0; i < l; i++ {
+	for range l {
 		val, err := r.Read()
 		if err != nil {
 			return v, err
