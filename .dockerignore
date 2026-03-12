@@ -1,0 +1,11 @@
+.git
+.github
+.agent
+.golangci.yml
+Taskfile.yml
+ROADMAP.md
+README.md
+LICENSE
+*.md
+coverage.out
+redis-server
