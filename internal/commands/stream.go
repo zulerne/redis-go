@@ -1,11 +1,13 @@
 package commands
 
 import (
+	"context"
+
 	"github.com/zulerne/redis-go/internal/store"
 	"github.com/zulerne/redis-go/pkg/resp"
 )
 
-func handleXAdd(args []string, s *store.Store) string {
+func handleXAdd(_ context.Context, args []string, s *store.Store) string {
 	streamKey := args[0]
 	entry := args[1]
 

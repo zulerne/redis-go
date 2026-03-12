@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -15,7 +16,7 @@ const (
 	optPX = "PX"
 )
 
-func handleSet(args []string, s *store.Store) string {
+func handleSet(_ context.Context, args []string, s *store.Store) string {
 	var ttl time.Duration
 	if len(args) > 2 {
 		for i := 2; i < len(args); i++ {
@@ -43,7 +44,7 @@ func handleSet(args []string, s *store.Store) string {
 	return resp.EncodeString(resp.OkMessage)
 }
 
-func handleGet(args []string, s *store.Store) string {
+func handleGet(_ context.Context, args []string, s *store.Store) string {
 	val, err := s.Get(args[0])
 
 	if err != nil {

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -48,7 +49,7 @@ func (cn Command) WrongOptionsMessage() string {
 	return fmt.Sprintf("wrong options for '%s' command", strings.ToLower(string(cn)))
 }
 
-type HandlerFunc func(args []string, s *store.Store) string
+type HandlerFunc func(ctx context.Context, args []string, s *store.Store) string
 
 type CommandHandler struct {
 	Action  HandlerFunc
@@ -75,7 +76,7 @@ var handlers = map[Command]CommandHandler{
 	XAdd: {Action: handleXAdd, MinArgs: 4},
 }
 
-func Handle(cmdName string, args []string, store *store.Store) string {
+func Handle(ctx context.Context, cmdName string, args []string, s *store.Store) string {
 	cmd := Command(cmdName)
 
 	handler, ok := handlers[cmd]
@@ -87,5 +88,5 @@ func Handle(cmdName string, args []string, store *store.Store) string {
 		return resp.EncodeError(cmd.WrongArgumentsMessage())
 	}
 
-	return handler.Action(args, store)
+	return handler.Action(ctx, args, s)
 }
